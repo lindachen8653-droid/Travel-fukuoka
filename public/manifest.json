@@ -1,0 +1,15 @@
+{
+  "name": "Our Trip｜福岡 5天4夜",
+  "short_name": "Our Trip",
+  "description": "雙人共用旅行行程、照片、購物、預算與提醒",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fff9f6",
+  "theme_color": "#f7bfd2",
+  "lang": "zh-Hant",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
