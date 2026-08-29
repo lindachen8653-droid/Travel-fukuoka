@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#f7bfd2" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Our Trip" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
+  <link rel="icon" href="/icon.svg" />
+  <link rel="stylesheet" href="/styles.css?v=1" />
+  <title>Our Trip｜福岡 5天4夜</title>
+</head>
+<body>
+  <div id="toast" class="toast"></div>
+  <main id="app"></main>
+  <nav id="bottomNav" class="bottom-nav hidden" aria-label="主要導覽">
+    <button data-view="home">🏠<span>首頁</span></button>
+    <button data-view="itinerary">📅<span>行程</span></button>
+    <button data-view="shopping">🛍️<span>購物</span></button>
+    <button data-view="budget">💰<span>預算</span></button>
+    <button data-view="more">✨<span>更多</span></button>
+  </nav>
+  <div id="modalRoot"></div>
+  <script type="module" src="/app.js?v=1"></script>
+</body>
+</html>
