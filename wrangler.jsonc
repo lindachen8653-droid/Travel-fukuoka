@@ -3,6 +3,7 @@
   "name": "our-trip-fukuoka",
   "main": "src/index.js",
   "compatibility_date": "2026-08-30",
+  "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
@@ -12,14 +13,8 @@
     {
       "binding": "DB",
       "database_name": "our-trip-db",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "66f530fe-c3c3-4437-ae7e-a3396f86678c",
       "migrations_dir": "migrations"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "PHOTOS",
-      "bucket_name": "our-trip-photos"
     }
   ],
   "durable_objects": {
@@ -38,5 +33,10 @@
   ],
   "triggers": {
     "crons": ["* * * * *"]
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
   }
 }
+
