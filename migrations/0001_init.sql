@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS photos (
   itinerary_id TEXT NOT NULL,
   r2_key TEXT NOT NULL UNIQUE,
   content_type TEXT NOT NULL,
+  data BLOB,
   caption TEXT DEFAULT '',
   uploaded_by TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -213,3 +214,4 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id, enabled);
+
