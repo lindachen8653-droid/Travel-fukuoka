@@ -1,5 +1,3 @@
-import webpush from 'web-push';
-
 const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), {
   status,
   headers: { 'content-type': 'application/json; charset=utf-8', ...headers }
@@ -31,7 +29,7 @@ function b64(bytes) {
 async function hashPassword(password, saltB64) {
   const salt = Uint8Array.from(atob(saltB64), c => c.charCodeAt(0));
   const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 180000, hash: 'SHA-256' }, key, 256);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, key, 256);
   return b64(bits);
 }
 
@@ -85,18 +83,45 @@ async function broadcast(env, tripId, payload) {
   } catch (e) { console.log('broadcast failed', e); }
 }
 
-async function configureWebPush(env) {
-  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) return false;
-  webpush.setVapidDetails(env.VAPID_SUBJECT || 'mailto:admin@example.com', env.VAPID_PUBLIC_KEY, env.VAPID_PRIVATE_KEY);
-  return true;
+function fromB64Url(value) {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=');
+  return Uint8Array.from(atob(padded), c => c.charCodeAt(0));
+}
+
+function toB64Url(value) {
+  return btoa(String.fromCharCode(...new Uint8Array(value))).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+async function vapidAuthorization(endpoint, env) {
+  const publicKey = fromB64Url(env.VAPID_PUBLIC_KEY);
+  const privateKey = fromB64Url(env.VAPID_PRIVATE_KEY);
+  if (publicKey.length !== 65 || publicKey[0] !== 4 || privateKey.length !== 32) throw new Error('Invalid VAPID key');
+  const key = await crypto.subtle.importKey('jwk', {
+    kty: 'EC', crv: 'P-256', x: toB64Url(publicKey.slice(1, 33)), y: toB64Url(publicKey.slice(33)),
+    d: toB64Url(privateKey), ext: true
+  }, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const header = toB64Url(enc.encode(JSON.stringify({ typ: 'JWT', alg: 'ES256' })));
+  const claims = toB64Url(enc.encode(JSON.stringify({
+    aud: new URL(endpoint).origin,
+    exp: Math.floor(Date.now() / 1000) + 12 * 60 * 60,
+    sub: env.VAPID_SUBJECT || 'mailto:admin@example.com'
+  })));
+  const unsigned = `${header}.${claims}`;
+  const signature = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, enc.encode(unsigned));
+  return `vapid t=${unsigned}.${toB64Url(signature)}, k=${env.VAPID_PUBLIC_KEY}`;
 }
 
 async function sendPushToUser(env, userId, payload) {
-  if (!(await configureWebPush(env))) return;
+  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) return;
   const { results } = await env.DB.prepare(`SELECT id,subscription_json FROM push_subscriptions WHERE user_id=? AND enabled=1`).bind(userId).all();
   for (const row of results || []) {
     try {
-      await webpush.sendNotification(JSON.parse(row.subscription_json), JSON.stringify(payload));
+      const subscription = JSON.parse(row.subscription_json);
+      const response = await fetch(subscription.endpoint, {
+        method: 'POST',
+        headers: { Authorization: await vapidAuthorization(subscription.endpoint, env), TTL: '60' }
+      });
+      if (!response.ok) throw Object.assign(new Error(`Push service returned ${response.status}`), { status: response.status });
     } catch (e) {
       const status = e?.statusCode || e?.status;
       if (status === 404 || status === 410) await env.DB.prepare(`DELETE FROM push_subscriptions WHERE id=?`).bind(row.id).run();
