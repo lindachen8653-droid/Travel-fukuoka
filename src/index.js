@@ -9,6 +9,12 @@ const uid = () => crypto.randomUUID();
 const nowIso = () => new Date().toISOString();
 const enc = new TextEncoder();
 
+function inviteCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  return Array.from(bytes, byte => alphabet[byte % alphabet.length]).join('');
+}
+
 function parseCookies(req) {
   const out = {};
   for (const part of (req.headers.get('cookie') || '').split(';')) {
@@ -167,7 +173,7 @@ async function api(req, env, ctx) {
   if (path === '/api/trips' && req.method === 'POST') {
     const b = await bodyJson(req);
     const tripId = uid();
-    const code = Math.random().toString(36).slice(2,8).toUpperCase();
+    const code = inviteCode();
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO trips(id,name,country,city,start_date,end_date,timezone,flight_summary,hotel_summary,invite_code,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).bind(
         tripId, b.name || '✈️ 福岡 5天4夜', b.country || '日本', b.city || '福岡', b.start_date || '2026-10-04', b.end_date || '2026-10-08', b.timezone || 'Asia/Tokyo', b.flight_summary || '', b.hotel_summary || '', code, user.id
@@ -225,11 +231,11 @@ async function api(req, env, ctx) {
     const file = form.get('file');
     if (!(file instanceof File)) return json({ error:'請選擇照片' },400);
     if (!String(file.type).startsWith('image/')) return json({ error:'只接受圖片' },400);
+    if (file.size > 1_500_000) return json({ error:'照片壓縮後需小於 1.5 MB' },413);
     const photoId = uid();
-    const ext = (file.type.split('/')[1] || 'jpg').replace('jpeg','jpg').replace(/[^a-z0-9]/gi,'');
-    const key = `${tripId}/${itineraryId}/${photoId}.${ext}`;
-    await env.PHOTOS.put(key, file.stream(), { httpMetadata:{ contentType:file.type } });
-    await env.DB.prepare(`INSERT INTO photos(id,trip_id,itinerary_id,r2_key,content_type,caption,uploaded_by) VALUES(?,?,?,?,?,?,?)`).bind(photoId,tripId,itineraryId,key,file.type,String(form.get('caption') || ''),user.id).run();
+    const key = `d1:${tripId}:${itineraryId}:${photoId}`;
+    const data = await file.arrayBuffer();
+    await env.DB.prepare(`INSERT INTO photos(id,trip_id,itinerary_id,r2_key,content_type,data,caption,uploaded_by) VALUES(?,?,?,?,?,?,?,?)`).bind(photoId,tripId,itineraryId,key,file.type,data,String(form.get('caption') || ''),user.id).run();
     await broadcast(env,tripId,{ type:'photo:create',itinerary_id:itineraryId });
     return json({ ok:true,id:photoId,url:`/api/photos/${photoId}` },201);
   }
@@ -239,15 +245,13 @@ async function api(req, env, ctx) {
     const p = await env.DB.prepare(`SELECT * FROM photos WHERE id=?`).bind(photoMatch[1]).first();
     if (!p) return new Response('Not found',{status:404});
     await requireMember(env,p.trip_id,user.id);
-    const obj = await env.PHOTOS.get(p.r2_key);
-    if (!obj) return new Response('Not found',{status:404});
-    return new Response(obj.body,{ headers:{ 'content-type':p.content_type, 'cache-control':'private, max-age=3600' } });
+    if (!p.data) return new Response('Not found',{status:404});
+    return new Response(p.data,{ headers:{ 'content-type':p.content_type, 'cache-control':'private, max-age=3600' } });
   }
   if (photoMatch && req.method === 'DELETE') {
     const p = await env.DB.prepare(`SELECT * FROM photos WHERE id=?`).bind(photoMatch[1]).first();
     if (!p) return json({ok:true});
     await requireMember(env,p.trip_id,user.id);
-    await env.PHOTOS.delete(p.r2_key);
     await env.DB.prepare(`DELETE FROM photos WHERE id=?`).bind(p.id).run();
     await broadcast(env,p.trip_id,{ type:'photo:delete',itinerary_id:p.itinerary_id });
     return json({ok:true});
@@ -298,8 +302,7 @@ async function api(req, env, ctx) {
       await requireMember(env,row.trip_id,user.id);
       if (req.method === 'DELETE') {
         if (resource === 'itinerary') {
-          const { results: pics } = await env.DB.prepare(`SELECT r2_key FROM photos WHERE itinerary_id=?`).bind(recordId).all();
-          await Promise.all((pics || []).map(p=>env.PHOTOS.delete(p.r2_key)));
+          await env.DB.prepare(`DELETE FROM photos WHERE itinerary_id=?`).bind(recordId).run();
         }
         await env.DB.prepare(`DELETE FROM ${resource} WHERE id=?`).bind(recordId).run();
         await broadcast(env,row.trip_id,{type:`${resource}:delete`,id:recordId});
@@ -367,3 +370,4 @@ export default {
   },
   async scheduled(controller, env, ctx) { ctx.waitUntil(scheduled(env)); }
 };
+
